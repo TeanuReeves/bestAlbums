@@ -1,0 +1,86 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: storyboard-ai-postgres
+    environment:
+      POSTGRES_DB: storyboard_ai
+      POSTGRES_USER: storyboard_user
+      POSTGRES_PASSWORD: storyboard_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./backend/db/init:/docker-entrypoint-initdb.d
+    networks:
+      - storyboard-network
+    restart: unless-stopped
+
+  # Redis for Queue Management
+  redis:
+    image: redis:7-alpine
+    container_name: storyboard-ai-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - storyboard-network
+    restart: unless-stopped
+
+  # Backend API Service
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.dev
+    container_name: storyboard-ai-backend
+    environment:
+      NODE_ENV: development
+      DATABASE_URL: postgresql://storyboard_user:storyboard_password@postgres:5432/storyboard_ai
+      REDIS_URL: redis://redis:6379
+      PORT: 8000
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+      - /app/node_modules
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - storyboard-network
+    restart: unless-stopped
+    command: npm run dev
+
+  # Frontend Service
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev
+    container_name: storyboard-ai-frontend
+    environment:
+      VITE_API_URL: http://localhost:8000
+      VITE_SOCKET_URL: http://localhost:8000
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    depends_on:
+      - backend
+    networks:
+      - storyboard-network
+    restart: unless-stopped
+    command: npm run dev
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+
+networks:
+  storyboard-network:
+    driver: bridge
